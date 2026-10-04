@@ -1,0 +1,213 @@
+package serve
+
+import (
+	"bytes"
+	"encoding/json"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/go-go-golems/remarquee/pkg/rmfiles"
+	"github.com/juruen/rmapi/api"
+	"github.com/juruen/rmapi/filetree"
+	"github.com/juruen/rmapi/model"
+)
+
+type fakeApiCtx struct {
+	ft     filetree.FileTreeCtx
+	mu     sync.Mutex
+	nextID int
+	bytes  int
+}
+
+var _ api.ApiCtx = (*fakeApiCtx)(nil)
+
+func newFake() *fakeApiCtx { return &fakeApiCtx{ft: filetree.CreateFileTreeCtx()} }
+
+func (f *fakeApiCtx) id() string {
+	f.nextID++
+	return "id-" + string(rune('a'+f.nextID))
+}
+
+func (f *fakeApiCtx) add(parentID, name, typ string) *model.Document {
+	d := &model.Document{ID: f.id(), Name: name, Type: typ, Parent: parentID}
+	f.ft.AddDocument(d)
+	return d
+}
+
+func (f *fakeApiCtx) Filetree() *filetree.FileTreeCtx                { return &f.ft }
+func (f *fakeApiCtx) SyncComplete() error                            { return nil }
+func (f *fakeApiCtx) Nuke() error                                    { return nil }
+func (f *fakeApiCtx) Refresh() (string, int64, error)                { return "", 0, nil }
+func (f *fakeApiCtx) ReplaceDocumentFile(string, string, bool) error { return nil }
+func (f *fakeApiCtx) FetchDocument(_, dst string) error {
+	return os.WriteFile(dst, []byte("archive"), 0o600)
+}
+func (f *fakeApiCtx) CreateDir(parentID, name string, _ bool) (*model.Document, error) {
+	return f.add(parentID, name, model.DirectoryType), nil
+}
+func (f *fakeApiCtx) UploadDocument(parentID, source string, _ bool, _, _, _ *int, _ *string) (*model.Document, error) {
+	stem := filepath.Base(source)
+	stem = strings.TrimSuffix(stem, filepath.Ext(stem))
+	return &model.Document{ID: f.id(), Name: stem, Type: model.DocumentType, Parent: parentID}, nil
+}
+func (f *fakeApiCtx) MoveEntry(src, dst *model.Node, name string) (*model.Node, error) {
+	doc := *src.Document
+	doc.Name = name
+	doc.Parent = dst.Id()
+	return &model.Node{Document: &doc, Parent: dst}, nil
+}
+func (f *fakeApiCtx) DeleteEntry(*model.Node, bool, bool) error { return nil }
+
+func newTestServer(t *testing.T) (*Server, string, string) {
+	t.Helper()
+	f := newFake()
+	ai := f.add("", "ai", model.DirectoryType)
+	notes := f.add(ai.ID, "Notes", model.DirectoryType)
+	doc := f.add(notes.ID, "Project Plan", model.DocumentType)
+	svc := rmfiles.NewService(f, rmfiles.Config{DefaultRemoteDir: "/ai"})
+	return NewServer(svc, Options{}), doc.ID, notes.ID
+}
+
+func do(t *testing.T, s *Server, method, target string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	var r *http.Request
+	if body != nil {
+		b, _ := json.Marshal(body)
+		r = httptest.NewRequest(method, target, bytes.NewReader(b))
+		r.Header.Set("Content-Type", "application/json")
+	} else {
+		r = httptest.NewRequest(method, target, nil)
+	}
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, r)
+	return rr
+}
+
+func TestHealthAndStatus(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	if rr := do(t, s, http.MethodGet, "/api/health", nil); rr.Code != 200 {
+		t.Fatalf("health = %d", rr.Code)
+	}
+	rr := do(t, s, http.MethodGet, "/api/status", nil)
+	if rr.Code != 200 {
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "authenticated") {
+		t.Fatalf("status body = %s", rr.Body.String())
+	}
+}
+
+func TestListFiles(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	rr := do(t, s, http.MethodGet, "/api/files?dir=/ai/Notes", nil)
+	if rr.Code != 200 {
+		t.Fatalf("list = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "Project Plan") {
+		t.Fatalf("body = %s", rr.Body.String())
+	}
+}
+
+func TestSearchEndpoint(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	rr := do(t, s, http.MethodGet, "/api/search?q=proj", nil)
+	if rr.Code != 200 {
+		t.Fatalf("search = %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Project Plan") {
+		t.Fatalf("body = %s", rr.Body.String())
+	}
+}
+
+func TestCreateFolderEndpoint(t *testing.T) {
+	s, _, notesID := newTestServer(t)
+	rr := do(t, s, http.MethodPost, "/api/folders", map[string]string{"parentPath": "/ai/Notes", "name": "Ideas"})
+	if rr.Code != 201 {
+		t.Fatalf("create folder = %d body=%s", rr.Code, rr.Body.String())
+	}
+	_ = notesID
+}
+
+func TestRenameEndpoint(t *testing.T) {
+	s, docID, _ := newTestServer(t)
+	rr := do(t, s, http.MethodPatch, "/api/entries/"+docID, map[string]string{"name": "Renamed"})
+	if rr.Code != 200 {
+		t.Fatalf("rename = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "Renamed") {
+		t.Fatalf("body = %s", rr.Body.String())
+	}
+}
+
+func TestDeleteRequiresConfirmation(t *testing.T) {
+	s, docID, _ := newTestServer(t)
+	rr := do(t, s, http.MethodDelete, "/api/entries", map[string]any{"ids": []string{docID}, "confirm": "nope"})
+	if rr.Code != 400 {
+		t.Fatalf("delete without confirm = %d, want 400", rr.Code)
+	}
+	rr = do(t, s, http.MethodDelete, "/api/entries", map[string]any{"ids": []string{docID}, "confirm": "DELETE", "recursive": true})
+	if rr.Code != 200 {
+		t.Fatalf("delete = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDownloadEndpoint(t *testing.T) {
+	s, docID, _ := newTestServer(t)
+	rr := do(t, s, http.MethodGet, "/api/entries/"+docID+"/download", nil)
+	if rr.Code != 200 {
+		t.Fatalf("download = %d", rr.Code)
+	}
+	if rr.Body.Len() == 0 {
+		t.Fatal("expected download bytes")
+	}
+}
+
+func TestUploadEndpoint(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("files", "note.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fw.Write([]byte("%PDF-1.4 test"))
+	_ = mw.WriteField("destDir", "/ai")
+	_ = mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/uploads", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 202 {
+		t.Fatalf("upload = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "jobId") {
+		t.Fatalf("body = %s", rr.Body.String())
+	}
+}
+
+func TestStaticServesIndexAndFallsBack(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	rr := do(t, s, http.MethodGet, "/", nil)
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "REMARQUEE FILES") {
+		t.Fatalf("index = %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = do(t, s, http.MethodGet, "/some/client/route", nil)
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "REMARQUEE FILES") {
+		t.Fatalf("spa fallback = %d", rr.Code)
+	}
+}
+
+func TestUnknownAPI404(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	rr := do(t, s, http.MethodGet, "/api/nope", nil)
+	if rr.Code != 404 {
+		t.Fatalf("unknown api = %d, want 404", rr.Code)
+	}
+}

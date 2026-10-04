@@ -12,6 +12,7 @@ import (
 	ocr_cmd "github.com/go-go-golems/remarquee/cmd/remarquee/cmds/ocr"
 	rmdoc_cmd "github.com/go-go-golems/remarquee/cmd/remarquee/cmds/rmdoc"
 	rmdsl_cmd "github.com/go-go-golems/remarquee/cmd/remarquee/cmds/rmdsl"
+	serve_cmd "github.com/go-go-golems/remarquee/cmd/remarquee/cmds/serve"
 	"github.com/go-go-golems/remarquee/cmd/remarquee/cmds/upload"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +38,7 @@ func main() {
 	rootCmd.AddCommand(ocr_cmd.NewOCRCommand())
 	rootCmd.AddCommand(rmdsl_cmd.NewRmdslCommand())
 	rootCmd.AddCommand(rmdoc_cmd.NewRmdocCommand())
+	rootCmd.AddCommand(serve_cmd.NewServeCommand())
 	rootCmd.AddCommand(upload.NewUploadCommand())
 
 	// ExecuteContext propagates SIGINT cancellation to the verbs. The wrapper
