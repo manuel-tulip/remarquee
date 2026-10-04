@@ -11,6 +11,7 @@
       <div class="title">REMARQUEE FILES</div>
       <div class="toolbar">
         <button id="upload-btn" class="btn" type="button">Upload</button>
+        <button id="uploadfolder-btn" class="btn" type="button">Upload Folder</button>
         <button id="newfolder-btn" class="btn" type="button">New Folder</button>
         <button id="refresh-btn" class="btn" type="button">Refresh</button>
       </div>
@@ -52,7 +53,10 @@
           <input id="upload-dest" name="dest" type="text" />
           <label for="upload-files">FILES (.md converts to PDF; .pdf and .epub upload directly)</label>
           <input id="upload-files" name="files" type="file" multiple />
-          <p class="hint">Markdown is converted with pandoc + XeLaTeX before upload.</p>
+          <label for="upload-dir">FOLDER (structure is preserved under the destination)</label>
+          <input id="upload-dir" name="dir" type="file" webkitdirectory directory multiple />
+          <p class="hint">Markdown is converted with pandoc + XeLaTeX before upload. You can also drag files or folders anywhere onto the page.</p>
+          <div id="staged" class="staged" hidden></div>
           <div id="job-progress"></div>
         </div>
         <div class="dialog-actions">
@@ -110,6 +114,7 @@
       </form>
     </dialog>
 
+    <div id="drop-overlay" class="drop-overlay" hidden>DROP FILES OR FOLDERS TO UPLOAD</div>
     <div id="toast" class="toast" hidden></div>
     <script type="module" src="app.js"></script>
   </body>

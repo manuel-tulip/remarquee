@@ -179,6 +179,33 @@ dialog::backdrop { background: rgba(0,0,0,0.25); }
 .job .state-done { color: var(--success); }
 .job .state-failed { color: var(--danger); }
 
+/* ---------- staged upload summary ---------- */
+.staged {
+  border: 1px solid var(--ink);
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  max-height: 120px;
+  overflow: auto;
+}
+.staged div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- drag & drop overlay ---------- */
+.drop-overlay {
+  position: fixed;
+  inset: 12px;
+  border: 2px dashed var(--ink);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  pointer-events: none;
+  z-index: 50;
+}
+
 /* ---------- toast ---------- */
 .toast {
   position: fixed;

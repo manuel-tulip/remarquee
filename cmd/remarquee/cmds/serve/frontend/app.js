@@ -310,21 +310,59 @@ $("confirm-cancel").addEventListener("click", () => {
 
 // ---------- upload ----------
 
-$("upload-btn").addEventListener("click", () => {
-  $("upload-dest").value = state.cwd;
+let staged = []; // { file, path }
+
+function openUploadDialog(destDir) {
+  $("upload-dest").value = destDir || state.cwd;
   $("job-progress").textContent = "";
-  $("upload-files").value = "";
+  renderStaged();
   $("upload-dialog").showModal();
+}
+
+function setStaged(entries) {
+  staged = entries;
+  renderStaged();
+}
+
+function renderStaged() {
+  const box = $("staged");
+  if (staged.length === 0) { box.hidden = true; box.textContent = ""; return; }
+  box.hidden = false;
+  box.textContent = "";
+  box.append(elWith("div", null, `${staged.length} file(s) staged:`));
+  for (const s of staged.slice(0, 200)) box.append(elWith("div", null, s.path));
+  if (staged.length > 200) box.append(elWith("div", null, `… and ${staged.length - 200} more`));
+}
+
+function fileListToStaged(fileList, useRelative) {
+  const out = [];
+  for (const f of fileList) {
+    const rel = useRelative && f.webkitRelativePath ? f.webkitRelativePath : f.name;
+    out.push({ file: f, path: rel });
+  }
+  return out;
+}
+
+$("upload-btn").addEventListener("click", () => { setStaged([]); openUploadDialog(state.cwd); });
+$("uploadfolder-btn").addEventListener("click", () => {
+  setStaged([]);
+  openUploadDialog(state.cwd);
+  $("upload-dir").click();
 });
 $("upload-cancel").addEventListener("click", () => $("upload-dialog").close());
 
+$("upload-files").addEventListener("change", (e) => setStaged(fileListToStaged(e.target.files, false)));
+$("upload-dir").addEventListener("change", (e) => setStaged(fileListToStaged(e.target.files, true)));
+
 $("upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const files = $("upload-files").files;
-  if (!files || files.length === 0) { toast("Choose at least one file", true); return; }
+  if (staged.length === 0) { toast("Choose files or a folder, or drag them onto the page", true); return; }
   const fd = new FormData();
   fd.append("destDir", $("upload-dest").value || "/");
-  for (const f of files) fd.append("files", f, f.name);
+  for (const s of staged) {
+    fd.append("files", s.file, s.file.name);
+    fd.append("paths", s.path);
+  }
   $("upload-submit").disabled = true;
   try {
     const res = await api("/api/uploads", { method: "POST", body: fd });
@@ -336,6 +374,75 @@ $("upload-form").addEventListener("submit", async (e) => {
     $("upload-submit").disabled = false;
   }
 });
+
+// ---------- drag & drop ----------
+
+let dragDepth = 0;
+function hasFiles(e) {
+  return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+}
+
+document.addEventListener("dragenter", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  $("drop-overlay").hidden = false;
+});
+document.addEventListener("dragover", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+});
+document.addEventListener("dragleave", (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth--;
+  if (dragDepth <= 0) { dragDepth = 0; $("drop-overlay").hidden = true; }
+});
+document.addEventListener("drop", async (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  $("drop-overlay").hidden = true;
+  const entries = await collectDropped(e.dataTransfer);
+  if (entries.length === 0) { toast("Nothing to upload", true); return; }
+  setStaged(entries);
+  openUploadDialog(state.cwd);
+});
+
+async function collectDropped(dt) {
+  const out = [];
+  // Capture entries synchronously: the DataTransfer becomes invalid after the
+  // drop handler yields to the event loop.
+  const roots = [];
+  for (const it of dt.items ? Array.from(dt.items) : []) {
+    if (it.kind === "file" && typeof it.webkitGetAsEntry === "function") {
+      const entry = it.webkitGetAsEntry();
+      if (entry) roots.push(entry);
+    }
+  }
+  if (roots.length > 0) {
+    for (const entry of roots) await traverseEntry(entry, "", out);
+    return out;
+  }
+  for (const f of dt.files || []) out.push({ file: f, path: f.name });
+  return out;
+}
+
+async function traverseEntry(entry, prefix, out) {
+  if (entry.isFile) {
+    const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+    out.push({ file, path: prefix + entry.name });
+    return;
+  }
+  if (entry.isDirectory) {
+    const reader = entry.createReader();
+    for (;;) {
+      const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+      if (!batch.length) break;
+      for (const child of batch) await traverseEntry(child, prefix + entry.name + "/", out);
+    }
+  }
+}
 
 async function pollJob(jobId) {
   const box = $("job-progress");
