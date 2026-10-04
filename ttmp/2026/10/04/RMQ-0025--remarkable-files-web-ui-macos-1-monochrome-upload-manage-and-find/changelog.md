@@ -32,3 +32,11 @@ Added folder uploads with preserved directory structure and browser drag-and-dro
 ## 2026-10-04
 
 Moved the work onto branch task/rmq-0025-serve-files-ui, forked go-go-golems/remarquee to manuel-tulip/remarquee, pushed the branch, and opened PR #29 against origin main.
+
+## 2026-10-04
+
+Reviewed PR 29 at f2dd68c against the design and pinned rmapi; added a roughly 9100-word intern-facing architecture/API/implementation review with twelve prioritized findings, offline probes, validation receipts and open remediation tasks. Uploaded the review to /ai/2026/10/04/RMQ-0025 as RMQ-0025 PR29 Architecture and Implementation Review; fixes remain unimplemented.
+
+### Related Files
+
+- /Users/manuel.odendahl/code/go-go-golems/remarquee/ttmp/2026/10/04/RMQ-0025--remarkable-files-web-ui-macos-1-monochrome-upload-manage-and-find/analysis/01-pr-29-intern-facing-architecture-design-and-implementation-review.md — Evidence-backed review and remediation plan

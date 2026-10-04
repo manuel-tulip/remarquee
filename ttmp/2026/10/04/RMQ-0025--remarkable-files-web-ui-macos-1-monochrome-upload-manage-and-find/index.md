@@ -17,10 +17,10 @@ Intent: long-term
 Owners: []
 RelatedFiles: []
 ExternalSources: []
-Summary: "Design and implementation ticket for a local, macOS-1-styled web UI that uploads, manages, and quickly finds reMarkable cloud files by reusing remarquee's rmapi/rmcloud/mdpdf stack, delivered as the `remarquee serve` subcommand. Deliverable is an intern-facing guide; implementation is planned in phases."
+Summary: "Design, implementation, and PR 29 review for remarquee serve: an embedded no-build files UI backed by a serialized rmfiles service. The intern-facing review identifies correctness and security changes required before merge."
 LastUpdated: 2026-10-04T07:22:39.678261-04:00
-WhatFor: "Explaining and implementing the reMarkable files web UI (Go HTTP API + embedded React SPA)."
-WhenToUse: "When starting or reviewing implementation of the files web UI, or debugging the Go API / React frontend boundary."
+WhatFor: "Explaining, reviewing, and improving the reMarkable files web UI (Go HTTP API plus embedded vanilla JavaScript frontend)."
+WhenToUse: "When reviewing PR 29, addressing its findings, or debugging the service and browser boundary."
 ---
 
 # Remarkable files web UI: macOS 1 monochrome upload, manage, and find
@@ -30,26 +30,29 @@ WhenToUse: "When starting or reviewing implementation of the files web UI, or de
 This ticket delivers a complete, intern-facing design and implementation guide
 for a small local web application that lets a user **upload, manage, and quickly
 find** their reMarkable cloud files. The UI is styled after classic Macintosh
-System 1 (1984): 1-bit black-on-white, square corners, hairline rules, dithered
-separators, **no window chrome and no menu bar**, and an accent palette used
+System 1 (1984): black-on-white, square corners, hairline rules,
+**no window chrome and no menu bar**, white text surfaces, and an accent palette used
 **only as text highlights**. Fonts are modern — the classic Macintosh bitmap
 typeface is explicitly not used.
 
 Architecturally the app reuses almost all existing machinery: `pkg/rmcloud` for
 auth/tree/download, `pkg/mdpdf` for Markdown→PDF, the `remarquee cloud …`
-commands as the semantic reference, and `cmd/remarquee-ui` + the Dagger/pnpm
-build helper as the Go-server-plus-embedded-SPA packaging precedent. The one
-genuine engineering task is extracting a **single-context, mutex-serialized
-service** (`pkg/rmfiles`) because `rmapi`'s `ApiCtx` is stateful and not safe for
-concurrent mutation.
+commands as the semantic reference. The implemented frontend is independent of
+`cmd/remarquee-ui` and requires no Node/Dagger build. Its central backend boundary
+is the **single-context, mutex-serialized service** (`pkg/rmfiles`) because
+`rmapi`'s `ApiCtx` is stateful and not safe for concurrent mutation.
 
-**Status: complete.** Implemented as `pkg/rmfiles` + `cmd/remarquee/cmds/serve`
-(the `remarquee serve` subcommand) with an embedded no-build static frontend.
-Validated against the live cloud; see the diary and tasks.md.
+**Implementation submitted; review requests changes.** PR [#29](https://github.com/go-go-golems/remarquee/pull/29)
+implements `pkg/rmfiles` + `cmd/remarquee/cmds/serve` with an embedded no-build
+static frontend. Historical happy-path cloud smoke tests are in the diary.
+The subsequent evidence-backed review identifies merge-critical recursive-delete,
+browser-origin, state-integrity, resource-ownership, and download-staging gaps;
+those fixes are not implemented by the review deliverable.
 
 ## Key Links
 
 - [Design & implementation guide](design-doc/01-remarkable-files-web-ui-design-and-implementation-guide-for-a-new-intern.md)
+- [PR 29 intern-facing architecture and implementation review](analysis/01-pr-29-intern-facing-architecture-design-and-implementation-review.md)
 - [Implementation diary](reference/01-implementation-diary.md)
 - [Task list](tasks.md)
 - **Related Files**: See frontmatter RelatedFiles field
@@ -57,8 +60,10 @@ Validated against the live cloud; see the diary and tasks.md.
 
 ## Status
 
-Current status: **active** — design/guide complete, implementation planned
-(Phases 0–6 in the design doc and tasks.md).
+Initial design and implementation are delivered. PR review is documented;
+remediation remains open in [tasks.md](tasks.md). Use the review's actual API
+reference and phased remediation plan rather than the historical React/API
+proposal sections in the original guide.
 
 ## Topics
 

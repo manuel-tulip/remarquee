@@ -920,3 +920,174 @@ $ gh pr create --repo go-go-golems/remarquee --base main \
 
 - Address PR review feedback; earlier follow-ups (auth retry, CSRF, large-drop
   streaming) are listed in the PR body and `tasks.md`.
+
+## Step 15: Evidence-backed architecture and implementation review of PR 29
+
+I reviewed the submitted implementation at `f2dd68ce4a19467ace9891eeafdddfb1443b2b70`
+against the original design, the current user requirements, and the exact pinned
+rmapi dependency. The resulting intern-facing analysis teaches the complete
+system, catalogs the actual API, and recommends changes before merge. This is a
+review deliverable; production implementation files remain unchanged.
+
+The most consequential correction to the earlier happy-path evidence is that
+recursive deletion does not remove descendant cloud records in the pinned
+Sync15 implementation. Its recursive flag bypasses the nonempty-folder guard,
+but its hash-tree removal only deletes the selected record. A local tree listing
+can therefore appear clean while a rebuild reattaches orphaned children at root.
+The review reproduces that behavior offline, not by deleting real cloud files.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Review the work of your colleague in this PR / design-doc. Create a detailed analysis / design / implementation review that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet points and pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and upload to remarkable."
+
+**Assistant interpretation:** Review PR 29 and its design with concrete code and
+behavior evidence; write a standalone technical onboarding/review document;
+store it in RMQ-0025 and deliver it to reMarkable.
+
+**Inferred user intent:** Give a new engineer enough understanding and actionable
+review findings to improve the feature rather than merely skim a PR summary.
+
+**Reviewed implementation:** `f2dd68c` — "docs(RMQ-0025): record branch, fork, and PR #29".
+
+### What I did
+
+- Confirmed PR head/base via `gh pr view 29 --repo go-go-golems/remarquee`.
+- Read all feature service, HTTP, frontend, and test files; read the full original
+  design and relevant rmcloud/mdpdf/interrupt/dependency implementations.
+- Created the ticket analysis using `docmgr doc add` and related seven primary
+  implementation/evidence files using `docmgr doc relate` with absolute paths.
+- Wrote `scripts/01-review-backend.go` and `scripts/02-review-frontend.cjs`:
+  offline fakes and deferred fetch probes exercising actual code, not cloud APIs.
+- Captured initial/final probe output and validation receipts in `sources/`.
+- Wrote the detailed review with 12 prioritized findings, diagrams, actual API
+  reference, proposed algorithms/decision records, test strategy and phased fixes.
+- Updated current index links/status prose and added open remediation tasks;
+  historical design and diary entries remain intact.
+
+### Why
+
+- A passing fake happy-path test cannot establish pinned dependency semantics.
+- An intern needs to distinguish local inputs, cloud records, local tree nodes,
+  index snapshots, browser state and physical tablet sync before interpreting
+  correctness claims or implementing fixes.
+- The user asked for analysis and delivery, not implementation of the fixes;
+  production changes and destructive cloud experiments were intentionally avoided.
+
+### What worked
+
+- Offline probes reproduced foreign-origin text/plain JSON mutation acceptance,
+  explicit root being redirected to the default, sanitized sibling-name collisions,
+  partial-delete index disagreement, retained deleted-ID handles, single-record
+  hash deletion and child reappearance on tree rebuild.
+- Frontend probes reproduced stale response overwriting newer-directory rows,
+  stale search mode after folder navigation, percent-sequence routing ambiguity,
+  and an unchanged file-input value when reopening Upload.
+- `go build ./...`, `go test ./...`,
+  `go test -race ./pkg/rmfiles ./cmd/remarquee/cmds/serve`, targeted `go vet`, and
+  `node --check cmd/remarquee/cmds/serve/frontend/app.js` returned exit 0.
+- `docmgr validate frontmatter` and `docmgr doctor --ticket RMQ-0025 --stale-after 30`
+  passed before delivery.
+
+### What didn't work
+
+- Initial offline fixture emitted the exact dependency diagnostic
+  `ERROR: 2026/10/04 07:56:05 blobdoc.go:201: missing hash for: child` when running
+  `go run "$T/scripts/01-review-backend.go"`. The artificial BlobDoc fixture lacked
+  a hash; I supplied placeholder hash-shaped values and reran the probe. Original
+  output is preserved in `sources/01-offline-review-probes.txt`; corrected output
+  is in `sources/02-offline-review-probes-final.txt`. This was not a production
+  cloud failure and did not require an authentication or network retry.
+- No docs connector or `format_file` tool is exposed in this session. The report
+  uses the requested ticket Markdown workflow; Go probe formatting uses gofmt.
+
+### What I learned
+
+- Pinned `SyncComplete` is notification-only and suppresses most notification
+  errors; publishing happens within cloud mutation methods. Earlier
+  transaction-like descriptions are not accurate.
+- `DeleteNode` leaves ID-map entries behind; disconnected nodes can pass the
+  service's ID lookup even after being removed from the visible index.
+- Current `--dev` changes caching of embedded bytes, not the source of those
+  bytes; source edits require rebuilding/restarting.
+- The original API proposal and implementation differ in search envelopes,
+  destination fields, upload acceptance and cancellation support.
+
+### What was tricky to build
+
+- The frontend probe executes actual app declarations and listener registration,
+  removes only the boot invocation, stubs the DOM and controls fetch completions.
+  It is a logic reproduction, not a claim to validate native dialogs or rendering.
+- The recursive-delete proof uses actual HashTree.Remove and DocumentsFileTree,
+  avoiding a fake that accidentally assumes the behavior being reviewed.
+
+### What warrants a second pair of eyes
+
+- Real cloud deletion/rebuild semantics and the possible historical smoke remnants;
+  do not use broad account cleanup commands based on a review finding.
+- Origin/Host/session-token policy, trusted Markdown resource boundaries,
+  idempotent auth recovery and service shutdown ownership.
+- Proposed live-ID reconciliation under partial mutations and generation conflicts.
+
+### What should be done in the future
+
+- Implement the review's safety phase before expanding UI features; the review
+  and tasks track open fixes without marking them implemented.
+- Add dependency-faithful destructive tests, adversarial handler tests,
+  deterministic request-order tests and real-browser interaction regressions.
+- Qualify one explicitly isolated opt-in cloud cycle after the fixes, including
+  full descendant absence after refresh/rebuild, not only current root listing.
+
+### Code review instructions
+
+- Start with `analysis/01-pr-29-intern-facing-architecture-design-and-implementation-review.md`.
+- Inspect F01/F05 with `pkg/rmfiles/manage.go`, `service.go` and pinned dependency
+  `api/sync15/apictx.go`, `tree.go`, and `filetree/filetree.go`.
+- Reproduce using the commands in the review's section 12; no live credentials
+  are required for the probes.
+- Treat their current-behavior assertions as review evidence, not desired-behavior
+  regression tests. Invert/strengthen expectations when implementing fixes.
+
+### Technical details
+
+- Review artifact: `analysis/01-pr-29-intern-facing-architecture-design-and-implementation-review.md`.
+- Raw probes: `sources/01-offline-review-probes.txt` and
+  `sources/02-offline-review-probes-final.txt`.
+- Validation: `sources/03-review-validation.txt` records revision, commands and exits.
+- Delivery receipt follows in Step 16 after the requested upload completes.
+
+## Step 16: Deliver the PR review to reMarkable
+
+The completed intern-facing review was uploaded as a new document in the ticket's
+reMarkable directory. Delivery used the normal bundle command without force,
+extra cloud listings, or local diagnostic renders; existing annotated documents
+were not replaced.
+
+### Prompt Context
+
+**User prompt (verbatim):** See Step 15.
+**Assistant interpretation:** Publish the completed review to the requested device workflow.
+**Inferred user intent:** Read and annotate the detailed technical review on reMarkable.
+
+### Evidence and commits
+
+```text
+remarquee upload bundle <ticket>/analysis/01-pr-29-intern-facing-architecture-design-and-implementation-review.md \
+  --name 'RMQ-0025 PR29 Architecture and Implementation Review' \
+  --remote-dir '/ai/2026/10/04/RMQ-0025' --toc-depth 2 --non-interactive
+
+OK: uploaded RMQ-0025 PR29 Architecture and Implementation Review.pdf -> /ai/2026/10/04/RMQ-0025
+```
+
+- Receipt retained in `sources/04-review-upload-receipt.txt`.
+- Report is approximately 9,100 words with architecture diagrams, actual API
+  contracts, twelve prioritized findings and an ordered remediation plan.
+- This result proves successful cloud upload, not independent physical tablet synchronization.
+
+### Noteworthy decisions or failures
+
+- No upload error, reauthentication retry or overwrite was necessary.
+- No implementation fixes or GitHub approve/request-changes review were submitted.
+
+### Remaining requirements and next action
+
+- Review/documentation delivery is complete; the remediation tasks remain open.
