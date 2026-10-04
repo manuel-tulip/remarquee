@@ -1091,3 +1091,111 @@ OK: uploaded RMQ-0025 PR29 Architecture and Implementation Review.pdf -> /ai/202
 ### Remaining requirements and next action
 
 - Review/documentation delivery is complete; the remediation tasks remain open.
+
+## Step 17: Second design for move browsing and clearer sortable columns
+
+I wrote a separate additions design rather than expanding the historical proposal
+or implementing UI changes prematurely. It specifies a destination directory
+picker, text-only muted directory color, a true file-format column, single-line
+dates and deterministic accessible sorting. The two move-browser bullets are
+combined into one web Move-action feature, with terminal browsing explicitly
+outside this proposed scope.
+
+The existing TYPE column describes cloud kind, not PDF/EPUB/Notebook. The pinned
+library already has format information in Content, but drops it in ToDocument;
+the design therefore includes a narrow typed metadata projection rather than
+extension guessing or downloading every archive for a list cell.
+
+### Prompt Context
+
+**User prompt (verbatim):**
+
+> Additions, btw. Create a second design doc.
+>
+> - file browser on move
+> - subtle color for dirs in listing for better readability
+> - add file type column
+> - make sure date column is not wrapping
+> - allow dir browser in move command
+> - allow sorting by columns
+
+**Assistant interpretation:** Create a second proposed design in RMQ-0025 for the
+six additions; explain implementation contracts and acceptance tests.
+
+**Inferred user intent:** Make movement navigable and the file listing easier to
+read and organize without requiring typed destination paths.
+
+**Implementation snapshot:** `6738158`; production files unchanged by this step.
+
+### What I did
+
+- Created `design-doc/02-files-ui-additions-directory-picker-column-clarity-and-sorting.md`
+  using docmgr and wrote requirements, state diagram, picker flow, metadata API,
+  CSS sketches, comparator pseudocode, decisions, phased plan and acceptance matrix.
+- Inspected current row rendering, typed move prompt and cloud document projection.
+- Documented canonical directory responses, independent picker generation, source
+  ID snapshots, root/empty-folder moves, subtree guards and native Escape handling.
+- Specified separate KIND/FILE TYPE columns and authoritative format metadata;
+  missing metadata remains Unknown, and Markdown uploads display PDF.
+- Linked the design from the index and tracked implementation separately from
+  completion of this design task.
+
+### Why
+
+- Current main-browser state cannot safely double as modal picker state.
+- Client-side sorting is sufficient for current fetched snapshots, but cannot
+  imply a globally sorted account-wide search beyond the returned result cap.
+- The requested color remains on directory text, preserving the monochrome
+  backgrounds and white selected-text contract.
+- No new upload was requested for this second document; no automatic reMarkable
+  delivery or production implementation was performed.
+
+### What worked
+
+- Pinned `archive/file.go:129-134` documents pdf/epub/empty-note format semantics.
+- `BlobDoc.ToDocument` confirms why current API entries cannot identify format.
+- The second design reuses existing list/move endpoints and requires no frontend
+  framework migration.
+
+### What didn't work
+
+- An initial source probe included a guessed `archive/content.go` path and rg
+  reported `No such file or directory (os error 2)`. The subsequent
+  `rg -n 'type Content struct|FileType ' <pinned-module>/archive` located the actual
+  declaration in `archive/file.go`; no source edit or dependency change was made.
+
+### What I learned
+
+- Loaded empty content type means a simple note, but absence of metadata must
+  not be mislabeled Notebook; the proposed projection needs a known/loaded signal.
+- Current search relevance and directory sort should have separate explicit state.
+
+### What was tricky to build
+
+- Descending sorting must reverse only the primary key, not folder-first grouping,
+  unknown-last ordering or deterministic tie-breaks.
+- Fixed-width date layout should permit horizontal overflow rather than wrapping
+  or hiding the requested date information.
+
+### What warrants a second pair of eyes
+
+- Confirm “move command” means web Move action rather than a new terminal picker.
+- Review the proposed typed rmapi format projection and loaded/unknown semantics.
+
+### What should be done in the future
+
+- Implement the documented phases and tests after the prior review safety fixes.
+- Qualify native browser picker, keyboard sorting, date nowrap and selected colors.
+
+### Code review instructions
+
+- Start with the new second design, then `app.js` renderRows/promptMove,
+  `entries.go` nodeToEntry and pinned BlobDoc.ToDocument.
+- Do not mark the additions implemented merely because this guide is complete.
+
+### Technical details
+
+- Proposed Entry addition: `fileType` normalized to pdf/epub/notebook/unknown;
+  empty for folders.
+- Move requests remain `POST /api/entries/{id}/move {destDir}`.
+- Dates compare numeric timestamps; sorting copies entries and retains stable IDs.

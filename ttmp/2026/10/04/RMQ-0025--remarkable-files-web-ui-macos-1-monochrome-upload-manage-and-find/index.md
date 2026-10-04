@@ -52,6 +52,7 @@ those fixes are not implemented by the review deliverable.
 ## Key Links
 
 - [Design & implementation guide](design-doc/01-remarkable-files-web-ui-design-and-implementation-guide-for-a-new-intern.md)
+- [Second design: move directory browser, file types and sortable columns](design-doc/02-files-ui-additions-directory-picker-column-clarity-and-sorting.md)
 - [PR 29 intern-facing architecture and implementation review](analysis/01-pr-29-intern-facing-architecture-design-and-implementation-review.md)
 - [Implementation diary](reference/01-implementation-diary.md)
 - [Task list](tasks.md)

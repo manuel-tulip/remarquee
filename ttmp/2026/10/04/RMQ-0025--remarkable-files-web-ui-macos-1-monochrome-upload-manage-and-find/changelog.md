@@ -40,3 +40,11 @@ Reviewed PR 29 at f2dd68c against the design and pinned rmapi; added a roughly 9
 ### Related Files
 
 - /Users/manuel.odendahl/code/go-go-golems/remarquee/ttmp/2026/10/04/RMQ-0025--remarkable-files-web-ui-macos-1-monochrome-upload-manage-and-find/analysis/01-pr-29-intern-facing-architecture-design-and-implementation-review.md — Evidence-backed review and remediation plan
+
+## 2026-10-04
+
+Created a second proposed design for the requested move directory browser, subtle directory text color, actual file-format column, non-wrapping dates and column sorting. Specifies independent picker state, authoritative metadata instead of extension guessing, comparator rules and acceptance tests. Design only: implementation tasks remain open; no new device upload requested.
+
+### Related Files
+
+- /Users/manuel.odendahl/code/go-go-golems/remarquee/ttmp/2026/10/04/RMQ-0025--remarkable-files-web-ui-macos-1-monochrome-upload-manage-and-find/design-doc/02-files-ui-additions-directory-picker-column-clarity-and-sorting.md — Second additions design
