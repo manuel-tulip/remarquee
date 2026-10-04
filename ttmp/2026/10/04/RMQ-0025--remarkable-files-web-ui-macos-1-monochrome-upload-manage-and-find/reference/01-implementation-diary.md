@@ -617,3 +617,31 @@ frontend), `9f7279b` (docs/ticket/README).
 - Follow-ups (see `tasks.md`): wire `rmcloud.WithAuthRetry` for mutating ops;
   same-origin/CSRF enforcement; opt-in integration test; revisit `WriteTimeout:0`
   and `Download` holding the mutex across I/O.
+
+## Step 8: Remove dithered backgrounds behind text
+
+The user reported that the dot texture sat behind text (breadcrumbs, search bar,
+hovered rows, dialog headers), which hurt legibility in the monochrome UI. I
+removed the dither pattern from every text-bearing surface so backgrounds are
+plain white (with a solid light-gray hover instead of dots).
+
+### Prompt Context
+**User prompt (verbatim):** "we need to have the background white and not dithered when there is this dot texture (like in the selected file names or in the breadcrumbs)"
+**Assistant interpretation:** Stop using the 50% checker as a background behind text; use white (and a non-dotted hover).
+**Inferred user intent:** Readable monochrome text; keep the retro layout but not texture behind glyphs.
+
+### Evidence and commits
+- `cmd/remarquee/cmds/serve/frontend/styles.css`: removed `--dither` and its
+  usages; `.searchbar`, `.crumbs`, `.dialog-head`, and `.searchbar label/.count`
+  now use `--paper`; `tr.row:hover td` uses solid `#f2f2f2` (selected rows remain
+  inverted black/white).
+- Verified the embedded asset: `curl /styles.css | grep -c dither` → `0`.
+- `go test ./cmd/remarquee/cmds/serve/...` → ok.
+
+### Noteworthy decisions or failures
+- Hover feedback is now a solid light gray rather than dither; selection still
+  inverts to black so the macOS-1 selection language is preserved.
+
+### Remaining requirements and next action
+- If a dotted separator is wanted later, apply it to a thin non-text strip, never
+  behind glyphs. No other requirements outstanding.
