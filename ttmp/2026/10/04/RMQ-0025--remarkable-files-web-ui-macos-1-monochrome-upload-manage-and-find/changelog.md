@@ -28,3 +28,7 @@ Implemented the feature: pkg/rmfiles (single-context, mutex-serialized service w
 ## 2026-10-04
 
 Added folder uploads with preserved directory structure and browser drag-and-drop. Backend accepts folder-relative paths (sanitized) and creates intermediate remote folders; frontend stages files from a folder picker or drag-and-drop and sends parallel paths. Verified live (nested md+pdf upload and recursive delete). Commits 30b228e, bef63ad, 76997c4.
+
+## 2026-10-04
+
+Moved the work onto branch task/rmq-0025-serve-files-ui, forked go-go-golems/remarquee to manuel-tulip/remarquee, pushed the branch, and opened PR #29 against origin main.

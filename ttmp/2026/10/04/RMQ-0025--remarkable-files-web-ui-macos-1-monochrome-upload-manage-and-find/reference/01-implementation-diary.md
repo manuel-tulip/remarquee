@@ -872,3 +872,51 @@ the `hidden` attribute had no effect. Added an explicit
 
 ### Remaining requirements and next action
 - N/A.
+
+## Step 14: Branch, fork, and pull request
+
+The work had been committed directly on local `main`. I moved it onto a feature
+branch, reset local `main` to `origin/main`, forked the repository, pushed the
+branch to the fork, and opened a cross-repository PR against
+`go-go-golems/remarquee`.
+
+### Prompt Context
+**User prompt (verbatim):** "create branch, fork repo, create PR against origin"
+**Assistant interpretation:** Package the RMQ-0025 work as a PR from a personal
+fork into the upstream repo.
+**Inferred user intent:** Normal review flow instead of pushing to upstream main.
+
+### What I did
+
+```text
+$ git branch task/rmq-0025-serve-files-ui        # 13 commits, tip c1951dd
+$ git reset --hard origin/main                   # main back to 02475f6
+$ gh repo fork go-go-golems/remarquee --clone=false
+  -> https://github.com/manuel-tulip/remarquee
+$ git remote add fork git@github.com:manuel-tulip/remarquee.git
+$ git push -u fork task/rmq-0025-serve-files-ui
+$ gh pr create --repo go-go-golems/remarquee --base main \
+     --head manuel-tulip:task/rmq-0025-serve-files-ui \
+     --title "feat(serve): add remarquee serve files web UI (RMQ-0025)" \
+     --body-file <summary of feature, endpoints, safety, validation, follow-ups>
+  -> https://github.com/go-go-golems/remarquee/pull/29
+```
+
+### Evidence and commits
+
+- PR: https://github.com/go-go-golems/remarquee/pull/29 (OPEN, cross-repo,
+  24 files, +5285/−0 at creation).
+- Branch: `task/rmq-0025-serve-files-ui` (fork `manuel-tulip/remarquee`, forks
+  from `go-go-golems/remarquee`).
+
+### Noteworthy decisions or failures
+
+- `gh repo fork ... --remote=false` was rejected by the CLI; used `--clone=false`
+  and added the `fork` remote manually.
+- Local `main` was reset to `origin/main` so the 13 feature commits live only on
+  the branch.
+
+### Remaining requirements and next action
+
+- Address PR review feedback; earlier follow-ups (auth retry, CSRF, large-drop
+  streaming) are listed in the PR body and `tasks.md`.
