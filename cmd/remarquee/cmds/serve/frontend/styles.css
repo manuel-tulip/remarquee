@@ -121,7 +121,11 @@ table.files th {
   padding: 6px 12px;
 }
 table.files td { padding: 5px 12px; border-bottom: 1px dotted var(--ink-faint); }
-table.files tr.row { cursor: default; }
+table.files tr.row {
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
 table.files tr.row:hover td { background: #f2f2f2; }
 table.files tr.row.selected td { background: var(--ink); color: var(--paper); }
 table.files tr.row.selected td a { color: var(--paper); text-decoration: underline; }

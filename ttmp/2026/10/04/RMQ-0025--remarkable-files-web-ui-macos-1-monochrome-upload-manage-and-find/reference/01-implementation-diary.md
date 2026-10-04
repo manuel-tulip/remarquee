@@ -645,3 +645,26 @@ plain white (with a solid light-gray hover instead of dots).
 ### Remaining requirements and next action
 - If a dotted separator is wanted later, apply it to a thin non-text strip, never
   behind glyphs. No other requirements outstanding.
+
+## Step 9: Disable text selection on file rows
+
+Double-clicking a folder to open it was also selecting the row's text. I made
+file rows non-selectable so double-click navigation is clean, while leaving the
+detail pane selectable for copying IDs/paths.
+
+### Prompt Context
+**User prompt (verbatim):** "disable text select on the directories (so i can double click without selecting)"
+**Assistant interpretation:** Prevent text selection on file/directory rows.
+**Inferred user intent:** Smooth double-click navigation in the file list.
+
+### Evidence and commits
+- `cmd/remarquee/cmds/serve/frontend/styles.css`: `table.files tr.row` now sets
+  `user-select: none` (and `-webkit-user-select: none` for Safari).
+- `go build ./cmd/remarquee/...` ok; `go test ./cmd/remarquee/cmds/serve/...` ok.
+
+### Noteworthy decisions or failures
+- Applied to all rows (not only folders) to match file-manager behavior; the
+  detail pane remains selectable.
+
+### Remaining requirements and next action
+- N/A.
