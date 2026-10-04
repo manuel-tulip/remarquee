@@ -814,3 +814,35 @@ GET /api/files?dir=/  -> rmq25-foldertest present: False
 
 - Files: `cmd/remarquee/cmds/serve/frontend/{index.html,styles.css,app.js}`.
 - Commits: `30b228e` (backend), `bef63ad` (frontend).
+
+## Step 12: Reflect the current directory in the URL
+
+The UI kept directory state only in memory, so paths could not be bookmarked,
+shared, or restored on reload. I put the current directory in the URL hash and
+made back/forward navigation work.
+
+### Prompt Context
+**User prompt (verbatim):** "add path into the url."
+**Assistant interpretation:** Sync browsing state with the URL.
+**Inferred user intent:** Shareable/bookmarkable links and browser history.
+
+### What I did
+
+- `frontend/app.js`: added `currentHashPath()` (reads/decodes `#/a/b`) and
+  `setHash(p)` (avoids redundant writes). `loadFiles(dir, fromHistory)` sets the
+  hash unless the navigation came from the hash; a `hashchange` listener loads
+  the new path when it differs; boot starts from `currentHashPath()`.
+- Hash routing (`#/ai/2026/10/04`) is used rather than path routing so the
+  static/SPA fallback is unaffected and no server round-trip is needed.
+
+### Evidence and commits
+- `node --check frontend/app.js` → OK.
+- Served asset check: `curl /app.js | grep -c hashchange` → `1`.
+- `go test ./cmd/remarquee/cmds/serve/...` → ok.
+
+### Noteworthy decisions or failures
+- Folder names containing `#` remain an edge case (fragment parsing), acceptable
+  for cloud folder names in practice.
+
+### Remaining requirements and next action
+- Search query is not yet in the URL; add `#/search?q=` if desired. N/A otherwise.

@@ -33,6 +33,26 @@ function toast(msg, isError) {
   toast._t = setTimeout(() => { el.hidden = true; }, 4000);
 }
 
+// ---------- URL <-> path routing ----------
+// The current directory lives in the URL hash (#/ai/2026/10/04) so links are
+// shareable and back/forward navigation works.
+function currentHashPath() {
+  let h = location.hash.replace(/^#/, "");
+  try { h = decodeURIComponent(h); } catch (_) { /* keep raw */ }
+  if (!h) return "/";
+  return h.startsWith("/") ? h : "/" + h;
+}
+
+function setHash(p) {
+  if (currentHashPath() === p) return;
+  location.hash = p;
+}
+
+window.addEventListener("hashchange", () => {
+  const p = currentHashPath();
+  if (p !== state.cwd) loadFiles(p, true);
+});
+
 function fmtTime(s) {
   if (!s) return "—";
   const d = new Date(s);
@@ -70,8 +90,9 @@ function setStatus(text, kind) {
   el.className = "status " + (kind || "");
 }
 
-async function loadFiles(dir) {
+async function loadFiles(dir, fromHistory) {
   state.cwd = dir || "/";
+  if (!fromHistory) setHash(state.cwd);
   state.selected = null;
   renderDetail(null);
   try {
@@ -522,5 +543,5 @@ $("search").addEventListener("input", (e) => {
 
 (async function boot() {
   await loadStatus();
-  await loadFiles("/");
+  await loadFiles(currentHashPath(), false);
 })();
