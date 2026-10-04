@@ -205,6 +205,8 @@ dialog::backdrop { background: rgba(0,0,0,0.25); }
   pointer-events: none;
   z-index: 50;
 }
+/* display:flex above would otherwise beat the UA [hidden]{display:none}. */
+.drop-overlay[hidden] { display: none; }
 
 /* ---------- toast ---------- */
 .toast {

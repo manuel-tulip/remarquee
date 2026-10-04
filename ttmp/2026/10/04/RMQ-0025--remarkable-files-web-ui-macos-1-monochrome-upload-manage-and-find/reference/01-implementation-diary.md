@@ -846,3 +846,29 @@ made back/forward navigation work.
 
 ### Remaining requirements and next action
 - Search query is not yet in the URL; add `#/search?q=` if desired. N/A otherwise.
+
+## Step 13: Fix always-visible drag overlay
+
+The drop overlay was visible on load and covered the page. Cause: the author rule
+`.drop-overlay { display: flex }` overrides the UA `[hidden] { display: none }`
+(author styles win over the UA stylesheet regardless of selector specificity), so
+the `hidden` attribute had no effect. Added an explicit
+`.drop-overlay[hidden] { display: none; }`.
+
+### Prompt Context
+**User prompt (verbatim):** "the drag area is now overlaid and visible and hides the browser"
+**Assistant interpretation:** The drop overlay is shown when it should be hidden.
+**Inferred user intent:** Overlay appears only while dragging.
+
+### Evidence and commits
+- `cmd/remarquee/cmds/serve/frontend/styles.css`: added `.drop-overlay[hidden] { display: none; }`.
+- Served check: `curl /styles.css | grep "drop-overlay\[hidden\]"` → present.
+- `go test ./cmd/remarquee/cmds/serve/...` → ok.
+
+### Noteworthy decisions or failures
+- General rule: any element that sets `display` in CSS must also handle
+  `[hidden]`. Audited the other hidden-toggled elements (`.toast`, `.staged`,
+  `#status`) — none set `display`, so they were unaffected.
+
+### Remaining requirements and next action
+- N/A.
