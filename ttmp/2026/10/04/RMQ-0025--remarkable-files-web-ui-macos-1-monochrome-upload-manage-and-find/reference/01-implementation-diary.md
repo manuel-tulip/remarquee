@@ -578,3 +578,42 @@ $ curl "/api/files?dir=/"  -> rmq25-smoketest present: False
 
 - Smoke doc: `/tmp/rmq25-smoke.md`; remote folder `/rmq25-smoketest` (created and
   deleted during the run). Uploaded remote name: `rmq25-smoke`.
+
+## Step 7: Full validation gate
+
+The implementation is complete and the repository-wide test gate passes, so the
+feature is qualified at the boundary rather than only per-package.
+
+### Prompt Context
+**User prompt (verbatim):** see Step 4.
+**Assistant interpretation:** Run the relevant validation gate for the completed feature.
+**Inferred user intent:** Confidence the change is safe to leave merged on `main`.
+
+### Evidence and commits
+
+```text
+$ go build ./...                       -> ok
+$ go vet ./pkg/rmfiles/... ./cmd/remarquee/cmds/serve/...  -> clean
+$ gofmt -l cmd/remarquee/cmds/serve pkg/rmfiles            -> clean
+$ go test ./...                        -> all packages pass
+$ go test ./pkg/rmfiles/... ./cmd/remarquee/cmds/serve/... -> ok
+```
+
+Live cloud smoke (Step 6): 13661 docs listed; create folder, Markdown upload
+(job `done`), ranked search, and recursive delete all round-tripped; smoke folder
+removed.
+
+Commits: `f62e278` (design docs), `0a692bb` (pkg/rmfiles), `137d9dc` (serve +
+frontend), `9f7279b` (docs/ticket/README).
+
+### Noteworthy decisions or failures
+
+- Deliberate deviations from the draft design: `remarquee serve` subcommand
+  (not a separate binary) and a no-build static frontend (not React/Vite).
+- No test failures observed.
+
+### Remaining requirements and next action
+
+- Follow-ups (see `tasks.md`): wire `rmcloud.WithAuthRetry` for mutating ops;
+  same-origin/CSRF enforcement; opt-in integration test; revisit `WriteTimeout:0`
+  and `Download` holding the mutex across I/O.
