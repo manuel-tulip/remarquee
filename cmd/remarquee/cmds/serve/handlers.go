@@ -242,8 +242,11 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, rmfiles.ErrInvalid)
 		return
 	}
+	// Optional parallel "paths" values carry folder-relative paths so a dropped
+	// or selected folder tree can be recreated under destDir.
+	paths := r.MultipartForm.Value["paths"]
 	inputs := make([]rmfiles.UploadInput, 0, len(fileHeaders))
-	for _, fh := range fileHeaders {
+	for i, fh := range fileHeaders {
 		f, err := fh.Open()
 		if err != nil {
 			writeErr(w, err)
@@ -255,7 +258,11 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, err)
 			return
 		}
-		inputs = append(inputs, rmfiles.UploadInput{Name: fh.Filename, Data: data})
+		name := fh.Filename
+		if i < len(paths) && strings.TrimSpace(paths[i]) != "" {
+			name = paths[i]
+		}
+		inputs = append(inputs, rmfiles.UploadInput{Name: name, Data: data})
 	}
 	jobID, err := s.svc.StartUpload(inputs, dest)
 	if err != nil {

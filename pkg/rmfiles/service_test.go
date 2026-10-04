@@ -224,3 +224,35 @@ func TestSanitizeStem(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeRelPath(t *testing.T) {
+	cases := map[string]string{
+		"folder/sub/file.md": "folder/sub/file.md",
+		"a\\b\\c.pdf":        "a/b/c.pdf",
+		"./a/../b":           "a/b",
+		"../../etc/passwd":   "etc/passwd",
+		"folder//double//x":  "folder/double/x",
+		"":                   "document",
+		"/leading/slash.md":  "leading/slash.md",
+	}
+	for in, want := range cases {
+		if got := sanitizeRelPath(in); got != want {
+			t.Errorf("sanitizeRelPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestJoinRemote(t *testing.T) {
+	cases := []struct{ base, rel, want string }{
+		{"/", ".", "/"},
+		{"/ai", "", "/ai"},
+		{"/ai", "sub/dir", "/ai/sub/dir"},
+		{"", "sub", "/sub"},
+		{"/ai/", "/sub/", "/ai/sub"},
+	}
+	for _, c := range cases {
+		if got := joinRemote(c.base, c.rel); got != c.want {
+			t.Errorf("joinRemote(%q,%q) = %q, want %q", c.base, c.rel, got, c.want)
+		}
+	}
+}

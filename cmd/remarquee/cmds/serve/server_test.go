@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-go-golems/remarquee/pkg/rmfiles"
 	"github.com/juruen/rmapi/api"
@@ -190,6 +191,51 @@ func TestUploadEndpoint(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "jobId") {
 		t.Fatalf("body = %s", rr.Body.String())
 	}
+}
+
+func TestUploadFolderPaths(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for _, rel := range []string{"MyFolder/sub/a.pdf", "MyFolder/b.pdf"} {
+		fw, err := mw.CreateFormFile("files", filepath.Base(rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = fw.Write([]byte("%PDF-1.4 test"))
+		if err := mw.WriteField("paths", rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = mw.WriteField("destDir", "/")
+	_ = mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/uploads", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 202 {
+		t.Fatalf("upload = %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		JobID string `json:"jobId"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	// Wait for the job to finish, then assert the relative path is preserved.
+	for i := 0; i < 100; i++ {
+		job, ok := s.svc.GetUpload(resp.JobID)
+		if ok && (job.State == rmfiles.JobDone || job.State == rmfiles.JobFailed) {
+			if job.Items[0].Name != "MyFolder/sub/a.pdf" {
+				t.Fatalf("item name = %q, want MyFolder/sub/a.pdf", job.Items[0].Name)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("upload job did not finish")
 }
 
 func TestStaticServesIndexAndFallsBack(t *testing.T) {

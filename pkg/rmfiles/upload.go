@@ -3,6 +3,7 @@ package rmfiles
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -196,9 +197,15 @@ func (s *Service) uploadOne(ctx context.Context, j *uploadJob, i int, in UploadI
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	ext := strings.ToLower(filepath.Ext(in.Name))
-	stem := strings.TrimSuffix(filepath.Base(in.Name), filepath.Ext(in.Name))
+	// in.Name may be a relative path ("folder/sub/file.md") when uploading a
+	// folder or a dropped directory tree; preserve the structure under dest.
+	rel := sanitizeRelPath(in.Name)
+	baseName := path.Base(rel)
+	dirPart := path.Dir(rel)
+	ext := strings.ToLower(path.Ext(baseName))
+	stem := strings.TrimSuffix(baseName, path.Ext(baseName))
 	safe := sanitizeStem(stem)
+	targetDir := joinRemote(dest, dirPart)
 
 	tmpDir, err := os.MkdirTemp("", "rmfiles-up-")
 	if err != nil {
@@ -235,7 +242,7 @@ func (s *Service) uploadOne(ctx context.Context, j *uploadJob, i int, in UploadI
 	j.setItem(i, JobUploading, "", "")
 	var entryID string
 	err = s.mutate(func(c api.ApiCtx) error {
-		parent, err := ensureDir(c, dest)
+		parent, err := ensureDir(c, targetDir)
 		if err != nil {
 			return err
 		}
@@ -256,6 +263,43 @@ func (s *Service) uploadOne(ctx context.Context, j *uploadJob, i int, in UploadI
 // ensureDir ensures dest exists (creating intermediate folders) and returns it.
 func ensureDir(c api.ApiCtx, dest string) (*model.Node, error) {
 	return rmcloud.MkdirAll(c, dest)
+}
+
+// joinRemote joins a remote directory with a relative slash path. An empty or
+// "." rel returns base unchanged; a "/" base yields "/rel".
+func joinRemote(base, rel string) string {
+	base = strings.TrimRight(base, "/")
+	rel = strings.Trim(rel, "/")
+	if rel == "" || rel == "." {
+		if base == "" {
+			return "/"
+		}
+		return base
+	}
+	if base == "" {
+		return "/" + rel
+	}
+	return base + "/" + rel
+}
+
+// sanitizeRelPath normalizes a client-provided relative path: backslashes become
+// slashes, empty/"."/".." segments are dropped (path-traversal guard), and the
+// result is a clean slash path. Returns "document" if nothing remains.
+func sanitizeRelPath(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	parts := strings.Split(name, "/")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" || p == "." || p == ".." {
+			continue
+		}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return "document"
+	}
+	return strings.Join(out, "/")
 }
 
 var (
