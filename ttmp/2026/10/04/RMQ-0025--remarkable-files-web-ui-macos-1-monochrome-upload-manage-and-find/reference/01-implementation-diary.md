@@ -668,3 +668,149 @@ detail pane selectable for copying IDs/paths.
 
 ### Remaining requirements and next action
 - N/A.
+
+## Step 10: Folder-relative upload paths in the service
+
+To support uploading a whole folder (not just loose files), I made the upload
+job able to recreate a directory tree under the destination. `UploadInput.Name`
+can now be a relative slash path, and the server reads an optional parallel
+`paths` multipart field so browsers can send folder-relative paths.
+
+### Prompt Context
+**User prompt (verbatim):** "allow folder uploads as well and drag drop"
+**Assistant interpretation:** Add folder upload (structure-preserving) and
+browser drag-and-drop.
+**Inferred user intent:** Drop a directory tree and have it appear on the tablet
+with the same layout.
+
+### What I did
+
+- `pkg/rmfiles/upload.go`: `uploadOne` now splits `in.Name` into `dirPart` and
+  `baseName`; sanitizes the stem; computes `targetDir = joinRemote(dest, dirPart)`;
+  uploads into `ensureDir(targetDir)`.
+- Added `sanitizeRelPath` (backslashes→slashes, drop `""`/`.`/`..` segments —
+  traversal guard) and `joinRemote` (handles `/` and `""` bases).
+- `cmd/remarquee/cmds/serve/handlers.go`: read `r.MultipartForm.Value["paths"]`
+  in order and use it as `UploadInput.Name` when present.
+- Tests: `TestSanitizeRelPath`, `TestJoinRemote`, and a handler test
+  `TestUploadFolderPaths` asserting the job item keeps `MyFolder/sub/a.pdf`.
+- Committed as `30b228e feat(serve): support folder-relative upload paths`.
+
+### Why
+
+- rmapi's `UploadDocument` takes a parent *ID*, so preserving structure means
+  ensuring each intermediate folder first (`rmcloud.MkdirAll`) and uploading into
+  the resolved node.
+- Go's `multipart.Part.FileName()` strips directories, so a parallel `paths`
+  field is the reliable way to carry relative paths.
+
+### What worked
+
+- `go test ./pkg/rmfiles ./cmd/remarquee/cmds/serve` passes; `go build ./...`
+  clean.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- `r.MultipartForm.Value["paths"]` preserves send order, matching
+  `r.MultipartForm.File["files"]` index-for-index.
+
+### What warrants a second pair of eyes
+
+- Directory names are passed through mostly untouched (cloud allows spaces).
+  Confirm there is no character class the cloud rejects for folders.
+
+### What should be done in the future
+
+- Optionally sanitize folder segments too, and surface a per-item error when a
+  single nested file fails so partial folder uploads are visible.
+
+### Code review instructions
+
+- Review `sanitizeRelPath`, `joinRemote`, and the `targetDir` computation in
+  `pkg/rmfiles/upload.go`; and the `paths` handling in `handleUpload`.
+
+### Technical details
+
+- `UploadInput.Name = "sub/plain.pdf"`, `dest = "/rmq25-foldertest"` →
+  remote `/rmq25-foldertest/sub/plain`.
+
+## Step 11: Drag-and-drop and folder picker in the UI; live validation
+
+I wired the frontend to stage files with relative paths from either a
+`webkitdirectory` folder picker or a drag-and-drop, then submit them as a single
+multipart upload. I validated the whole path against the live cloud and cleaned
+up.
+
+### Prompt Context
+**User prompt (verbatim):** see Step 10.
+**Assistant interpretation:** Add the UI affordances and prove they work.
+**Inferred user intent:** Drag a folder into the browser and have it upload.
+
+### What I did
+
+- `frontend/index.html`: added "Upload Folder" toolbar button, a
+  `webkitdirectory` folder input, a staged-files summary, and a drop overlay.
+- `frontend/styles.css`: dashed `.drop-overlay` and `.staged` list styles.
+- `frontend/app.js`: `staged` array of `{file, path}`; `fileListToStaged` uses
+  `webkitRelativePath` for folder picks; `collectDropped` captures
+  `webkitGetAsEntry()` roots synchronously then traverses directories recursively;
+  submit posts `files` + parallel `paths`; dragenter/dragover/dragleave/drop
+  listeners show/hide the overlay.
+- Committed as `bef63ad feat(serve): folder selection and drag-and-drop uploads`.
+
+### Evidence and commits
+
+```text
+$ node --check frontend/app.js        -> app.js OK
+$ go build ./... ; go test ./...      -> ok
+
+# live (server on 127.0.0.1:8139)
+POST /api/uploads  destDir=/rmq25-foldertest
+  files=@plain.pdf paths=sub/plain.pdf
+  files=@one.md    paths=notes/one.md
+-> job upload-1-48000; items sub/plain.pdf=done, notes/one.md=uploading
+GET /api/files?dir=/rmq25-foldertest        -> sub/, notes/
+GET /api/files?dir=/rmq25-foldertest/sub    -> plain
+GET /api/files?dir=/rmq25-foldertest/notes  -> one   (md -> PDF conversion)
+DELETE /api/entries {confirm:"DELETE", recursive:true} -> {"deleted":1}
+GET /api/files?dir=/  -> rmq25-foldertest present: False
+```
+
+### What worked
+
+- Folder structure was preserved (`sub/plain`, `notes/one`), Markdown in the
+  nested folder converted to PDF, and the throwaway tree deleted cleanly.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- `DataTransferItem.webkitGetAsEntry()` must be captured before the drop handler
+  yields; the code collects all root entries synchronously, then awaits traversal.
+
+### What warrants a second pair of eyes
+
+- Large folder drops stage every file in memory before upload; a streaming or
+  chunked approach may be needed for very large trees.
+- The staged list and multipart body are bounded by the 64 MiB `maxUploadBytes`
+  per request.
+
+### What should be done in the future
+
+- Stream large drops (or upload sequentially per file) instead of one big body.
+
+### Code review instructions
+
+- Review `collectDropped`/`traverseEntry` and the submit handler in `app.js`,
+  and the `paths` parsing in `handlers.go`.
+
+### Technical details
+
+- Files: `cmd/remarquee/cmds/serve/frontend/{index.html,styles.css,app.js}`.
+- Commits: `30b228e` (backend), `bef63ad` (frontend).
