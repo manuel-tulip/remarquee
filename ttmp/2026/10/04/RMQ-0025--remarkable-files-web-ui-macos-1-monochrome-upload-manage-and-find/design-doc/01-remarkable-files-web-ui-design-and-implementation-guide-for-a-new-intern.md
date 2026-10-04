@@ -77,9 +77,13 @@ engineering task: extracting the command-layer cloud operations into a
 document explains that service, the HTTP API, the frontend, and the macOS-1
 visual system in enough detail that an intern can implement it phase by phase.
 
-> **Status note.** This ticket is a *design and implementation guide*. No
-> production code is delivered by the ticket itself. The repository evidence
-> cited throughout was read at commit `02475f6`. Where behavior is inferred
+> **Status note.** This guide was written at commit `02475f6`; the feature is now
+> **implemented** in `pkg/rmfiles` and `cmd/remarquee/cmds/serve` (see the
+> implementation diary and `tasks.md`). Two deliberate deviations from the draft
+> below: (1) the UI ships as the **`remarquee serve`** subcommand, not a separate
+> binary; (2) the frontend is a **no-build static app** (vanilla ES modules +
+> CSS embedded with `go:embed`) rather than React/Vite, so `go build` always
+> works and no node toolchain is required in CI. Where behavior is inferred
 > rather than read directly, it is marked "proposal" or "open question".
 
 ---
@@ -914,6 +918,14 @@ or underline), and dithered backgrounds must never sit behind body text.
 
 ### 6.10 Frontend structure
 
+> **Implemented as a no-build static app.** The layout below is the React/Vite
+> proposal for context; the shipped frontend lives at
+> `cmd/remarquee/cmds/serve/frontend/` as `index.html`, `styles.css`, and
+> `app.js` (vanilla ES module), embedded with `//go:embed frontend`. It provides
+> the same screens (list, breadcrumbs, search, detail pane, upload with job
+> polling, new folder, rename/move, typed delete confirmation, status banner)
+> without a build step.
+
 ```text
 frontend/                 # colocated at cmd/remarquee/cmds/serve/frontend
   index.html
@@ -963,13 +975,12 @@ export async function renameEntry(id: string, name: string): Promise<Entry>;
 
 ### 6.11 Package for dev vs prod
 
-- **Dev:** `remarquee serve --dev` on `:8080`; Vite on `:5173` proxies `/api` to
-  `:8080` (exactly as `cmd/remarquee-ui/frontend/vite.config.ts` does). Hot reload
-  for the UI, real cloud for the backend.
-- **Prod:** `go generate ./cmd/remarquee/cmds/serve` builds `frontend/dist` via
-  the Dagger/pnpm helper (or local pnpm fallback), then the normal
-  `go build ./cmd/remarquee` embeds it. Users still get one `remarquee` binary;
-  no new install path, no new Homebrew formula.
+- **Dev:** `remarquee serve --dev` on `:8080` with static caching disabled. (The
+  shipped frontend is a no-build static app, so there is no separate Vite dev
+  server; edit `frontend/` and reload.)
+- **Prod:** the same `go build ./cmd/remarquee` embeds `frontend/` via
+  `go:embed`; no node/pnpm/Dagger step is required. Users get one `remarquee`
+  binary with a `serve` command.
 
 ### 6.12 Security posture
 
@@ -1201,8 +1212,9 @@ records the commands and results.
    *Recommendation:* a dedicated status banner instructing the user to run
    `rmapi reset` / device registration in a terminal; do not attempt to embed
    the interactive code prompt.
-7. **State management.** Redux Toolkit (consistent with `remarquee-ui`) vs.
-   lightweight React state. *Recommendation:* Redux Toolkit.
+7. **State management (RESOLVED).** The shipped frontend is vanilla ES modules
+   with a small `state` object, not Redux Toolkit. This drops the node build
+   toolchain entirely; the trade-off is fewer batteries for larger UI growth.
 8. **Mobile/tablet.** Desktop-first; confirm whether a tablet width is needed in
    v1.
 

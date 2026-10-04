@@ -125,6 +125,22 @@ remarquee upload bundle ./design.md ./api.md ./runbook.md --name "Project Handbo
 remarquee upload bundle ./docs/ --layout editor --name "Docs Review"
 ```
 
+### Serve a local files web UI
+
+```bash
+# Start the loopback-only web UI on http://127.0.0.1:8080
+remarquee serve
+
+# Choose a different address or default upload destination
+remarquee serve --addr 127.0.0.1:9090 --remote-dir /ai
+```
+
+`remarquee serve` opens a single-page app for browsing, searching, uploading,
+and managing your reMarkable cloud files. Markdown uploads are converted to PDF
+with the same pandoc/XeLaTeX pipeline as `remarquee upload md`; PDF and EPUB
+files upload directly. The server binds to loopback by default and never exposes
+your `~/.rmapi` credentials to the browser.
+
 ### Turn source code into reviewable PDFs
 
 ```bash

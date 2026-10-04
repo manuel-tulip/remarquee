@@ -20,3 +20,7 @@ Recorded two user constraints in the guide: modern fonts only (classic Macintosh
 ## 2026-10-04
 
 Uploaded the finalized design guide to reMarkable: OK: uploaded RMQ-0025_Remarkable_Files_Web_UI_-_Intern_Design_Guide.pdf -> /ai/2026/10/04/RMQ-0025
+
+## 2026-10-04
+
+Implemented the feature: pkg/rmfiles (single-context, mutex-serialized service with search index, manage ops, and upload jobs) and the remarquee serve subcommand with an embedded no-build macOS-1 monochrome frontend. Registered serve in cmd/remarquee/main.go. Added unit + handler tests; validated end-to-end against the live cloud (13661 docs, create folder + md upload + recursive delete). Commits f62e278, 0a692bb, 137d9dc.

@@ -1,7 +1,7 @@
 ---
 Title: 'Remarkable files web UI: macOS 1 monochrome upload, manage, and find'
 Ticket: RMQ-0025
-Status: active
+Status: complete
 Topics:
     - remarkable
     - cloud
@@ -43,8 +43,9 @@ genuine engineering task is extracting a **single-context, mutex-serialized
 service** (`pkg/rmfiles`) because `rmapi`'s `ApiCtx` is stateful and not safe for
 concurrent mutation.
 
-**Status: design delivered; implementation not started.** The UI ships as
-`remarquee serve` (one binary, no separate executable).
+**Status: complete.** Implemented as `pkg/rmfiles` + `cmd/remarquee/cmds/serve`
+(the `remarquee serve` subcommand) with an embedded no-build static frontend.
+Validated against the live cloud; see the diary and tasks.md.
 
 ## Key Links
 

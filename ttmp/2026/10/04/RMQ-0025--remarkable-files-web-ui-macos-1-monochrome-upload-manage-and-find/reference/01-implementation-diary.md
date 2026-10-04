@@ -13,10 +13,22 @@ Topics:
 DocType: reference
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://cmd/remarquee/cmds/serve/command.go
+      Note: remarquee serve command and lifecycle
+    - Path: repo://cmd/remarquee/cmds/serve/frontend/app.js
+      Note: Embedded no-build macOS-1 frontend
+    - Path: repo://cmd/remarquee/cmds/serve/handlers.go
+      Note: HTTP API and error mapping
+    - Path: repo://pkg/rmfiles/service.go
+      Note: 'Implemented service: single ApiCtx + mutex, index, mutations'
+    - Path: repo://pkg/rmfiles/upload.go
+      Note: Async upload jobs with Markdown-to-PDF conversion
 ExternalSources: []
-Summary: "Chronological diary for RMQ-0025: reconnaissance and the intern-facing design/implementation guide for the reMarkable files web UI."
+Summary: 'Chronological diary for RMQ-0025: reconnaissance and the intern-facing design/implementation guide for the reMarkable files web UI.'
 LastUpdated: 2026-10-04T00:00:00-04:00
+WhatFor: ""
+WhenToUse: ""
 ---
 
 # Implementation diary — RMQ-0025
@@ -293,3 +305,276 @@ delivery, not physical device synchronization.
 
 - Document name: `RMQ-0025_Remarkable_Files_Web_UI_-_Intern_Design_Guide.pdf`
 - Destination: `/ai/2026/10/04/RMQ-0025`
+
+## Step 4: Implement the `pkg/rmfiles` cloud file service
+
+With the design settled, I started implementation with the backend service,
+because it is the layer with the real correctness risk (rmapi's `ApiCtx` is
+stateful and non-thread-safe). The service owns one long-lived `ApiCtx`,
+serializes mutations behind a mutex, keeps a flat search index, and exposes
+list/search/create/rename/move/delete/download plus asynchronous upload jobs.
+
+### Prompt Context
+**User prompt (verbatim):** "ok, forget about remarquee-ui then. Let's implement, btw commit at appropriate intervals and keep a detailed diary as you work
+    (using the diary format from the skill)."
+**Assistant interpretation:** Stop planning/reuse; build the design for real,
+committing at sensible boundaries and recording investigation-format diary
+entries as work proceeds. "Forget about remarquee-ui" means do not build on that
+codebase.
+**Inferred user intent:** A working `remarquee serve` files UI with a clean git
+history and an evidence-backed work log.
+
+### What I did
+
+- Added `pkg/rmfiles/errors.go` (sentinels: `ErrNotFound`, `ErrConflict`,
+  `ErrInvalid`, `ErrNotDir`, `ErrUnsupported`).
+- Added `pkg/rmfiles/entries.go`: `Entry`, `BuildPath` (mirrors the CLI's
+  `buildPathFromParents`), `WalkEntries`/`ChildrenEntries` with root/trash
+  filtering and template hiding, and `normalizePath`.
+- Added `pkg/rmfiles/search.go`: case-insensitive fuzzy subsequence scoring with
+  prefix/word-start/consecutive bonuses; name matches outrank path matches.
+- Added `pkg/rmfiles/service.go`: `Service` with `mu sync.Mutex`, one
+  `api.ApiCtx`, `reindexLocked`, `mutate` (lock → fn → `SyncComplete` → reindex),
+  `NewService(apiCtx, cfg)`, `NewServiceFromCloud(ctx, cfg)`, `List`, `Search`,
+  `Status`, `Refresh`.
+- Added `pkg/rmfiles/manage.go`: `CreateFolder`, `Rename`, `Move`, `Delete`,
+  `Download`, and `isSubdir` (reject move-into-own-subtree).
+- Added `pkg/rmfiles/upload.go`: async job store + `StartUpload`; per-file
+  convert (`.md` via `mdpdf.ConvertMarkdownFileToPDF`) or direct (`.pdf`/`.epub`);
+  upload under `mutate`; `ensureDir` delegates to `rmcloud.MkdirAll`; sanitized
+  file stems so rmapi does not reject names.
+- Added `pkg/rmfiles/service_test.go` with an in-memory fake `api.ApiCtx`.
+- Committed as `0a692bb feat(rmfiles): add cloud file service for serve UI`.
+
+### Why
+
+- The command layer's cloud logic lives inside Cobra `Run` functions and cannot
+  be called from an HTTP handler; a reusable service was required.
+- A single `ApiCtx` avoids racing on `~/.cache/rmapi/tree.cache` and keeps the
+  in-memory tree consistent; the mutex serializes the short mutation window.
+- Conversion runs outside the tree lock so slow pandoc calls do not block reads.
+
+### What worked
+
+- `go build ./pkg/rmfiles` and `go test ./pkg/rmfiles` pass (paths, filtering,
+  search ordering, create/rename/move/delete, sanitize).
+- Modeling the fake on a real `filetree.CreateFileTreeCtx()` meant the tests
+  exercise the actual rmapi tree behavior (AddDocument/MoveNode/DeleteNode).
+
+### What didn't work
+
+- First test run failed: `TestRenameAndMove` expected a rename to "Notes" to
+  conflict, but "Notes" was the *parent folder*, not a sibling. Fixed by
+  renaming to the sibling "hidden template"; then `ok`.
+
+### What I learned
+
+- `filetree.MoveNode(src, dst)` mutates `src` in place and re-parents it, so the
+  service must follow `cloud mv` exactly (`MoveEntry` then `MoveNode`) and then
+  read the entry back from the mutated node.
+- `rmapi`'s `FetchDocument` writes the `.rmdoc` zip to the given path, so a temp
+  path is enough; no pre-creation needed.
+
+### What was tricky to build
+
+- Keeping the job state machine and `Done` counter correct while items complete
+  concurrently: `setItem` recomputes done/failed/pending under the job mutex and
+  only marks the job terminal when nothing is pending.
+
+### What warrants a second pair of eyes
+
+- Lock ordering and lifetime: mutations hold `mu` across `SyncComplete`, and
+  `Download` holds it across network I/O (acceptable for v1, but a candidate for
+  a read/write or separate-download design).
+- No automatic re-auth retry yet: `rmcloud.WithAuthRetry` is not wired in, so a
+  stale token surfaces as an operation error. Tracked as a follow-up.
+
+### What should be done in the future
+
+- Wire `WithAuthRetry` for mutating operations; add a `--reauth`-style recovery
+  path or a re-login endpoint.
+
+### Code review instructions
+
+- Start at `pkg/rmfiles/service.go` (`mutate`, `reindexLocked`,
+  `resolveDirLocked`) and `pkg/rmfiles/upload.go` (`runUpload`, `uploadOne`).
+- Validate with `go test ./pkg/rmfiles` and `go vet ./pkg/rmfiles`.
+
+### Technical details
+
+- Locked helpers: `resolveDirLocked`, `nodeByIDLocked`, `reindexLocked`.
+- `mutate(fn)` = lock → `fn(apiCtx)` → `SyncComplete()` → `reindexLocked()`.
+- `StartUpload` returns a job ID; `runUpload` uses a 30-minute background
+  context and a worker semaphore of `cfg.Workers`.
+- Sanitization: spaces→`_`, drop non `[A-Za-z0-9_.-]`, collapse `__`, trim; the
+  temp filename determines the remote document name via `util.DocPathToName`.
+
+## Step 5: Implement `remarquee serve` (HTTP API + macOS-1 static frontend)
+
+I then built the HTTP layer as a `serve` subcommand of the existing binary
+(`cmd/remarquee/cmds/serve`), with an embedded, **no-build** static frontend. I
+deliberately deviated from the design doc's React+Vite proposal: a vanilla ES
+module app embedded with `go:embed` means `go build` always works, there is no
+node toolchain in CI, and the UI ships in the existing single binary.
+
+### Prompt Context
+**User prompt (verbatim):** see Step 4.
+**Assistant interpretation:** Build the `serve` command and frontend.
+**Inferred user intent:** A usable local UI with the macOS-1 look.
+
+### What I did
+
+- `cmd/remarquee/cmds/serve/command.go`: cobra `serve` command with `--addr`
+  (default `127.0.0.1:8080`), `--dev`, `--remote-dir`, `--include-templates`,
+  `--workers`; builds the service via `rmfiles.NewServiceFromCloud`, starts an
+  `http.Server` with sane timeouts, and shuts down on context cancellation.
+- `server.go`: `Server` with `GET/POST/PATCH/DELETE` `ServeMux` patterns and an
+  SPA fallback to `index.html`; `/api/` is never shadowed.
+- `handlers.go`: JSON helpers, typed error→status mapping, endpoints for status,
+  files, tree, search, folders, rename, move, delete (typed `DELETE` confirm),
+  download, uploads + job status, refresh.
+- `embed.go`: `//go:embed frontend` + `fs.Sub`.
+- `frontend/`: `index.html`, `styles.css` (macOS-1 tokens: white/black, square
+  corners, hairline rules, dither strips, accent-on-text only, modern fonts),
+  `app.js` (list, breadcrumbs, debounced search, detail pane, upload with job
+  polling, new folder, rename/move, typed delete confirm, status banner for
+  missing pandoc).
+- Registered `serve_cmd.NewServeCommand()` in `cmd/remarquee/main.go`.
+- Added `server_test.go` (fake `ApiCtx`) covering health/status, list, search,
+  create folder, rename, delete-confirm, download, multipart upload, static
+  index + SPA fallback, and unknown-API 404.
+- Committed as `137d9dc feat(serve): add remarquee serve files web UI`.
+
+### Why
+
+- No-build frontend removes the Dagger/pnpm dependency and guarantees
+  `go build ./...` works in clean environments.
+- Loopback bind + same-origin `fetch` keeps credentials in `~/.rmapi` and out of
+  the browser.
+
+### What worked
+
+- `go build ./...`, `go vet`, and `go test ./cmd/remarquee/cmds/serve` pass.
+- `remarquee serve --help` renders the new command through the existing help
+  system.
+
+### What didn't work
+
+- Nothing failed in this step.
+
+### What I learned
+
+- Go 1.22+ method+wildcard `ServeMux` patterns make the routing table readable
+  and keep `r.PathValue("id")` typed path params.
+
+### What was tricky to build
+
+- SPA fallback with `http.FileServer`: an unknown non-asset path is rewritten to
+  `/` by cloning the request so `index.html` is served, while `/api/` paths are
+  explicitly 404'd.
+
+### What warrants a second pair of eyes
+
+- CSRF/same-origin checks on mutating endpoints are not implemented; localhost
+  binding reduces but does not eliminate the risk of a malicious web page POSTing
+  to the local server.
+- `WriteTimeout: 0` is intentional (large downloads) but should be revisited.
+
+### What should be done in the future
+
+- Add same-origin enforcement and a per-session token; consider a read-only mode.
+
+### Code review instructions
+
+- Review `cmd/remarquee/cmds/serve/handlers.go` (error mapping, delete confirm)
+  and `frontend/app.js` (upload job polling, selection state).
+- Validate with `go test ./cmd/remarquee/cmds/serve ./pkg/rmfiles`.
+
+### Technical details
+
+- Endpoints: `GET /api/health`, `/api/status`, `/api/files?dir=`, `/api/files/tree`,
+  `/api/search?q=&limit=`; `POST /api/folders`, `/api/refresh`, `/api/uploads`;
+  `PATCH /api/entries/{id}`; `POST /api/entries/{id}/move`;
+  `DELETE /api/entries` (body `{ids, confirm:"DELETE", recursive}`).
+- Static assets under `/` (index.html fallback), never under `/api/`.
+
+## Step 6: Live cloud validation and cleanup
+
+I ran the built binary against the real reMarkable cloud and exercised the full
+create/upload/search/delete path, then removed the smoke-test data.
+
+### Prompt Context
+**User prompt (verbatim):** see Step 4.
+**Assistant interpretation:** Prove the implementation works end-to-end, not just
+in unit tests.
+**Inferred user intent:** Confidence that `remarquee serve` actually manages real
+cloud files.
+
+### What I did
+
+```text
+$ go build -o /tmp/remarquee-rmq25 ./cmd/remarquee
+$ /tmp/remarquee-rmq25 serve --addr 127.0.0.1:8137      # tmux session rmq25
+INF remarquee serve listening url=http://127.0.0.1:8137
+
+$ curl /api/status
+{"authenticated":true,"documentCount":13661,"defaultRemoteDir":"/","pandocAvailable":true}
+
+$ curl "/api/files?dir=/"            -> 64 root entries (ai, Articles, Books, …)
+$ curl "/api/search?q=rmq&limit=5"   -> ranked RMQ-* tickets first
+$ curl /                              -> 200, contains "REMARQUEE FILES"
+$ curl /some/client/route             -> 200 (SPA fallback)
+
+$ curl -X POST /api/folders  {"parentPath":"/","name":"rmq25-smoketest"}
+{"id":"41f15575-…","path":"/rmq25-smoketest","isDir":true,…}
+
+$ curl -X POST /api/uploads -F destDir=/rmq25-smoketest -F files=@rmq25-smoke.md
+{"jobId":"upload-1-668000"}
+$ curl /api/uploads/upload-1-668000
+{"state":"done","total":1,"done":1,"items":[{"name":"rmq25-smoke.md","state":"done","entryId":"f5b3e968-…"}]}
+
+$ curl "/api/files?dir=/rmq25-smoketest"   -> rmq25-smoke (document)
+$ curl "/api/search?q=smoke&limit=3"       -> includes rmq25-smoketest (score 520)
+
+$ curl -X DELETE /api/entries {"ids":["41f15575-…"],"confirm":"DELETE","recursive":true}
+{"deleted":1}
+$ curl "/api/files?dir=/"  -> rmq25-smoketest present: False
+```
+
+### What worked
+
+- Auth + tree sync (13661 docs), listing, ranked search, static/SPA serving,
+  folder creation, Markdown→PDF upload (job reached `done`), and recursive
+  deletion all worked against the live cloud.
+- Cleanup verified: the smoke folder is gone from root.
+
+### What didn't work
+
+- The `tmux send-keys` cleanup reported `can't find pane: rmq25` after Ctrl-C;
+  the session had already exited. `lsof -iTCP:8137` confirmed no listener, so the
+  server was stopped correctly.
+
+### What I learned
+
+- A full `CreateApiCtx` sync over 13k documents took ~1s with a warm cache and
+  ~11s cold, confirming the design's "create the context once" rule.
+
+### What warrants a second pair of eyes
+
+- Nothing new; the smoke test used a clearly named throwaway folder and removed
+  it.
+
+### What should be done in the future
+
+- Add an opt-in integration test guarded by an env var so this path is covered
+  without manual curl runs.
+
+### Code review instructions
+
+- Re-run the curl sequence above against a local `remarquee serve` if desired;
+  prefer a throwaway folder.
+
+### Technical details
+
+- Smoke doc: `/tmp/rmq25-smoke.md`; remote folder `/rmq25-smoketest` (created and
+  deleted during the run). Uploaded remote name: `rmq25-smoke`.
